@@ -1,6 +1,8 @@
-import express from 'express'
-import dotenv from 'dotenv'
-import mongoose from 'mongoose'
+
+import express from "express";
+import dotenv from "dotenv";
+import mongoose from "mongoose";
+import userRouter from "./routes/userRoutes.js";
 
 // reads .env file and loads values into process.env
 dotenv.config()
@@ -19,11 +21,16 @@ mongoose.connect(mongoURI).then(
     }
 )
 
+// Assign the express backend to a variable 
 const app = express()
 
 // Body Parser (middleware)
 app.use(express.json())
 
+// Connect the user router
+app.use("/api/users", userRouter);
+
+// Start the server and make it listed for incoming requests on a specified port
 app.listen(process.env.PORT,
     // Arrow function
     ()=>{
