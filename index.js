@@ -3,6 +3,7 @@ import express from "express";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import userRouter from "./routes/userRoutes.js";
+import accommodationRouter from "./routes/accommodationRoutes.js";
 
 // reads .env file and loads values into process.env
 dotenv.config()
@@ -29,6 +30,9 @@ app.use(express.json())
 
 // Connect the user router
 app.use("/api/users", userRouter);
+
+// Connect accommodation router
+app.use("/api/accommodations", accommodationRouter);
 
 // Start the server and make it listed for incoming requests on a specified port
 app.listen(process.env.PORT,
