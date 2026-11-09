@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Accommodation from "../models/accommodationModel.js";
+import Booking from "../models/bookingModel.js";
 
 // Add accommodation - Admin only
 export async function addAccommodation(req, res) {
@@ -552,14 +553,29 @@ export async function deleteAccommodation(req, res) {
             });
         }
 
-        // Find and delete accommodation
-        const accommodation = await Accommodation.findByIdAndDelete(id);
+        // Find accommodation
+        const accommodation = await Accommodation.findById(id);
 
         if (!accommodation) {
             return res.status(404).json({
                 message: "Accommodation not found"
             });
         }
+
+        // Check for confirmed or occupied bookings
+        const activeBookings = await Booking.findOne({
+            accommodation: id,
+            status: { $in: ["Confirmed", "Occupied"] }
+        });
+
+        if (activeBookings) {
+            return res.status(400).json({
+                message: "Cannot delete this accommodation because it has confirmed or occupied bookings"
+            });
+        }
+
+        // Delete accommodation
+        await Accommodation.findByIdAndDelete(id);
 
         return res.status(200).json({
             message: "Accommodation deleted successfully"

@@ -6,6 +6,7 @@ import userRouter from "./routes/userRoutes.js";
 import accommodationRouter from "./routes/accommodationRoutes.js";
 import cors from "cors";
 import feedbackRouter from "./routes/feedbackRoutes.js";
+import bookingRouter from "./routes/bookingRoutes.js";
 
 // reads .env file and loads values into process.env
 dotenv.config()
@@ -41,6 +42,9 @@ app.use("/api/accommodations", accommodationRouter);
 
 // Connect feedback router
 app.use("/api/feedback", feedbackRouter);
+
+// Connect booking router
+app.use("/api/bookings", bookingRouter);
 
 // Start the server and make it listed for incoming requests on a specified port
 app.listen(process.env.PORT,
