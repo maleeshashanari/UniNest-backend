@@ -4,8 +4,23 @@ import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 import { validatePassword } from "../utils/validatePassword.js";
+import nodemailer from "nodemailer";
+import OTP from "../models/otpModel.js";
+import { randomInt } from "crypto";
 
 dotenv.config();
+
+// Configure email transporter
+const transporter = nodemailer.createTransport({
+    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    auth: {
+        user: "ug.maleesha.shanari@gmail.com",
+        pass: process.env.GMAIL_APP_PASSWORD
+    }
+});
 
 // Register User
 export async function registerUser(req, res) {
@@ -439,6 +454,215 @@ export async function changeUserPassword(req, res) {
 
         return res.status(500).json({
             message: "Error changing password"
+        });
+    }
+}
+
+// Send OTP for password reset
+export async function sendOTP(req, res) {
+    try {
+
+        // Get and normalize email
+        const email = req.body.email?.trim().toLowerCase();
+
+        // Check email
+        if (!email) {
+            return res.status(400).json({
+                message: "Email is required"
+            });
+        }
+
+        // Find registered user
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User with given email not found"
+            });
+        }
+
+        // Check whether the account is blocked
+        if (user.isBlocked) {
+            return res.status(403).json({
+                message: "Your account is blocked. Please contact the administrator."
+            });
+        }
+
+        // Check email configuration
+        if (!process.env.GMAIL_APP_PASSWORD) {
+            return res.status(500).json({
+                message: "Email configuration is missing"
+            });
+        }
+
+        // Generate a five-digit OTP
+        const otp = randomInt(10000, 100000).toString();
+
+        // Hash the OTP before storing it
+        const otpHash = await bcrypt.hash(otp, 10);
+
+        // Delete any previous OTP for this email
+        await OTP.deleteOne({ email });
+
+        // Create a new OTP record
+        const newOTP = new OTP({
+            email,
+            otpHash,
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000)
+        });
+
+        // Save OTP to MongoDB
+        await newOTP.save();
+
+        // Prepare OTP email
+        const message = {
+            from: "ug.maleesha.shanari@gmail.com",
+            to: email,
+            subject: "UniNest - Password Reset OTP",
+            text: `Your UniNest password reset OTP is ${otp}. It is valid for 10 minutes. Do not share this OTP with anyone.`
+        };
+
+        // Send OTP email
+        await transporter.sendMail(message);
+
+        return res.status(200).json({
+            message: "OTP sent successfully"
+        });
+
+    } catch (error) {
+
+        // Delete OTP if email sending fails
+        if (req.body.email) {
+            await OTP.deleteOne({
+                email: req.body.email.trim().toLowerCase()
+            }).catch(() => {});
+        }
+
+        console.error("Send OTP error:", error);
+
+        return res.status(500).json({
+            message: "Error sending OTP"
+        });
+    }
+}
+
+// Verify OTP and reset student password
+export async function verifyOTP(req, res) {
+    try {
+
+        // Get reset password details
+        const email = req.body.email?.trim().toLowerCase();
+        const otpCode = req.body.otp?.toString().trim();
+        const { newPassword, confirmPassword } = req.body;
+
+        // Check required fields
+        if (!email || !otpCode || !newPassword || !confirmPassword) {
+            return res.status(400).json({
+                message: "All fields are required"
+            });
+        }
+
+        // Validate OTP format
+        if (!/^\d{5}$/.test(otpCode)) {
+            return res.status(400).json({
+                message: "Invalid OTP format"
+            });
+        }
+
+        // Check password confirmation
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({
+                message: "Passwords do not match"
+            });
+        }
+
+        // Validate password strength
+        const passwordErrors = validatePassword(newPassword);
+
+        if (passwordErrors.length > 0) {
+            return res.status(400).json({
+                message: `Password must contain ${passwordErrors.join(", ")}.`
+            });
+        }
+
+        // Check PEPPER configuration
+        if (!process.env.PEPPER) {
+            return res.status(500).json({
+                message: "Password security configuration is missing"
+            });
+        }
+
+        // Find OTP record
+        const otpRecord = await OTP.findOne({ email });
+
+        if (!otpRecord) {
+            return res.status(404).json({
+                message: "OTP not found. Please request a new OTP."
+            });
+        }
+
+        // Check OTP expiration
+        if (otpRecord.expiresAt <= new Date()) {
+            await OTP.deleteOne({ email });
+
+            return res.status(400).json({
+                message: "OTP has expired. Please request a new OTP."
+            });
+        }
+
+        // Verify OTP
+        const isOTPValid = await bcrypt.compare(
+            otpCode,
+            otpRecord.otpHash
+        );
+
+        if (!isOTPValid) {
+            return res.status(400).json({
+                message: "Invalid OTP"
+            });
+        }
+
+        // Find registered user
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        // Check whether the account is blocked
+        if (user.isBlocked) {
+            return res.status(403).json({
+                message: "Your account is blocked. Please contact the administrator."
+            });
+        }
+
+        // Hash new password with PEPPER
+        const hashedPassword = await bcrypt.hash(
+            newPassword + process.env.PEPPER,
+            10
+        );
+
+        // Update user password
+        user.password = hashedPassword;
+
+        // Save updated password
+        await user.save();
+
+        // Delete used OTP
+        await OTP.deleteOne({ email });
+
+        return res.status(200).json({
+            message: "Password reset successfully"
+        });
+
+    } catch (error) {
+
+        console.error("Verify OTP error:", error);
+
+        return res.status(500).json({
+            message: "Error resetting password"
         });
     }
 }

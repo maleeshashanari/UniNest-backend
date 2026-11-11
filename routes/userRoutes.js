@@ -1,7 +1,7 @@
 // Import express
 import express from "express";
 // Import user controller functions
-import { registerUser, loginUser, updateUserProfile, changeUserPassword } from "../controllers/userController.js";
+import { registerUser, loginUser, updateUserProfile, changeUserPassword, sendOTP, verifyOTP } from "../controllers/userController.js";
 import { authorizeRoles } from "../middleware/authorizeRoleMiddleware.js";
 import authorizeUser from "../middleware/jwtMiddleware.js";
 
@@ -28,6 +28,12 @@ userRouter.put(
     authorizeRoles("student", "admin"),
     changeUserPassword
 );
+
+// Send OTP for forgot password
+userRouter.post("/send-otp", sendOTP);
+
+// Verify OTP and reset password
+userRouter.post("/verify-otp", verifyOTP);
 
 // Export router
 export default userRouter;
