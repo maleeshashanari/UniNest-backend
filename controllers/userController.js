@@ -10,6 +10,7 @@ dotenv.config();
 // Register User
 export async function registerUser(req, res) {
     try {
+
         // Get registration details
         let {
             firstName,
@@ -76,7 +77,14 @@ export async function registerUser(req, res) {
             });
         }
 
-        // Hash the password
+        // Check PEPPER configuration
+        if (!process.env.PEPPER) {
+            return res.status(500).json({
+                message: "Password security configuration is missing"
+            });
+        }
+
+        // Hash the password with PEPPER
         const hashedPassword = await bcrypt.hash(
             password + process.env.PEPPER,
             10
@@ -109,6 +117,7 @@ export async function registerUser(req, res) {
         });
 
     } catch (error) {
+
         // Handle registration errors
         if (error.code === 11000) {
             return res.status(409).json({
@@ -127,6 +136,7 @@ export async function registerUser(req, res) {
 // Login User
 export async function loginUser(req, res) {
     try {
+
         // Get login details
         let { email, password } = req.body;
 
@@ -165,7 +175,14 @@ export async function loginUser(req, res) {
             });
         }
 
-        // Compare the password
+        // Check PEPPER configuration
+        if (!process.env.PEPPER) {
+            return res.status(500).json({
+                message: "Password security configuration is missing"
+            });
+        }
+
+        // Compare the password with PEPPER
         const isPasswordValid = await bcrypt.compare(
             password + process.env.PEPPER,
             user.password
@@ -211,10 +228,217 @@ export async function loginUser(req, res) {
         });
 
     } catch (error) {
+
         console.error("Login error:", error);
 
         return res.status(500).json({
             message: "Login failed"
+        });
+    }
+}
+
+// Update student profile
+export async function updateUserProfile(req, res) {
+
+    // Check user authentication
+    if (!req.user) {
+        return res.status(401).json({
+            message: "Unauthorized"
+        });
+    }
+
+    try {
+
+        // Get updated profile details
+        const { firstName, lastName, phone, university, image } = req.body;
+
+        // Find logged-in user
+        const user = await User.findOne({ email: req.user.email });
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        // Validate required profile fields
+        if (
+            typeof firstName !== "string" || !firstName.trim() ||
+            typeof lastName !== "string" || !lastName.trim() ||
+            typeof phone !== "string" || !phone.trim()
+        ) {
+            return res.status(400).json({
+                message: "First name, last name and phone are required"
+            });
+        }
+
+        // Validate phone number
+        if (!/^\d{10,15}$/.test(phone.trim())) {
+            return res.status(400).json({
+                message: "Invalid phone number"
+            });
+        }
+
+        // Update profile information
+        user.firstName = firstName.trim();
+        user.lastName = lastName.trim();
+        user.phone = phone.trim();
+
+        // Update university if provided
+        if (university !== undefined) {
+            if (typeof university !== "string") {
+                return res.status(400).json({
+                    message: "Invalid university"
+                });
+            }
+
+            user.university = university.trim();
+        }
+
+        // Update profile image if provided
+        if (image !== undefined) {
+            if (typeof image !== "string") {
+                return res.status(400).json({
+                    message: "Invalid profile image"
+                });
+            }
+
+            user.image = image;
+        }
+
+        // Save updated user details
+        await user.save();
+
+        // Generate updated JWT token
+        const token = jwt.sign(
+            {
+                id: user._id.toString(),
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                phone: user.phone,
+                university: user.university,
+                image: user.image,
+                role: user.role
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "48h" }
+        );
+
+        // Return updated profile
+        return res.status(200).json({
+            message: "Profile updated successfully",
+            token: token,
+            user: {
+                id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phone: user.phone,
+                university: user.university,
+                image: user.image,
+                role: user.role
+            }
+        });
+
+    } catch (error) {
+
+        console.error("Update profile error:", error);
+
+        return res.status(500).json({
+            message: "Error updating profile"
+        });
+    }
+}
+
+// Change student password after login
+export async function changeUserPassword(req, res) {
+
+    // Check user authentication
+    if (!req.user) {
+        return res.status(401).json({
+            message: "Unauthorized"
+        });
+    }
+
+    try {
+
+        // Get current and new passwords
+        const { currentPassword, newPassword } = req.body;
+
+        // Validate password fields
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({
+                message: "Current password and new password are required"
+            });
+        }
+
+        // Check new password length
+        if (newPassword.length < 8) {
+            return res.status(400).json({
+                message: "New password must contain at least 8 characters"
+            });
+        }
+
+        // Validate new password strength
+        const passwordErrors = validatePassword(newPassword);
+
+        if (passwordErrors.length > 0) {
+            return res.status(400).json({
+                message: `New password must contain ${passwordErrors.join(", ")}.`
+            });
+        }
+
+        // Check PEPPER configuration
+        if (!process.env.PEPPER) {
+            return res.status(500).json({
+                message: "Password security configuration is missing"
+            });
+        }
+
+        // Find logged-in user
+        const user = await User.findOne({ email: req.user.email });
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        // Compare current password with PEPPER
+        const isPasswordCorrect = await bcrypt.compare(
+            currentPassword + process.env.PEPPER,
+            user.password
+        );
+
+        if (!isPasswordCorrect) {
+            return res.status(400).json({
+                message: "Current password is incorrect"
+            });
+        }
+
+        // Hash new password with PEPPER
+        const hashedPassword = await bcrypt.hash(
+            newPassword + process.env.PEPPER,
+            10
+        );
+
+        // Update user password
+        user.password = hashedPassword;
+
+        // Save updated password
+        await user.save();
+
+        return res.status(200).json({
+            message: "Password changed successfully"
+        });
+
+    } catch (error) {
+
+        console.error("Change password error:", error);
+
+        return res.status(500).json({
+            message: "Error changing password"
         });
     }
 }
