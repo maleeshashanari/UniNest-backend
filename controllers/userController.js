@@ -6,7 +6,8 @@ import User from "../models/userModel.js";
 import { validatePassword } from "../utils/validatePassword.js";
 import nodemailer from "nodemailer";
 import OTP from "../models/otpModel.js";
-import { randomInt } from "crypto";
+import { randomInt, randomBytes } from "crypto";
+import axios from "axios";
 
 dotenv.config();
 
@@ -663,6 +664,111 @@ export async function verifyOTP(req, res) {
 
         return res.status(500).json({
             message: "Error resetting password"
+        });
+    }
+}
+
+
+// Google login
+export async function googleLogin(req, res) {
+    try {
+        // Get the Google access token from the frontend
+        const { token: googleToken } = req.body;
+
+        if (!googleToken) {
+            return res.status(400).json({
+                message: "Google token is required"
+            });
+        }
+
+        // Get the Google user's information
+        const googleResponse = await axios.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            {
+                headers: {
+                    Authorization: `Bearer ${googleToken}`
+                }
+            }
+        );
+
+        const googleUser = googleResponse.data;
+
+        // Check whether Google has verified the email
+        if (!googleUser.email || !googleUser.email_verified) {
+            return res.status(400).json({
+                message: "Google email is not verified"
+            });
+        }
+
+        // Find an existing UniNest account
+        let user = await User.findOne({
+            email: googleUser.email.toLowerCase()
+        });
+
+        // Check whether the account is blocked
+        if (user && user.isBlocked) {
+            return res.status(403).json({
+                message: "Your account is blocked. Please contact support."
+            });
+        }
+
+        // Create a new student account if the user does not exist
+        if (!user) {
+            const randomPassword = randomBytes(32).toString("hex");
+
+            const hashedPassword = await bcrypt.hash(
+                randomPassword + process.env.PEPPER,
+                10
+            );
+
+            user = new User({
+                firstName: googleUser.given_name || "Student",
+                lastName: googleUser.family_name || "",
+                email: googleUser.email.toLowerCase(),
+                password: hashedPassword,
+                image: googleUser.picture || "/images/default-profile.png",
+                role: "student"
+            });
+
+            await user.save();
+        }
+
+        // Generate the UniNest JWT token
+        const token = jwt.sign(
+            {
+                id: user._id.toString(),
+                email: user.email,
+                role: user.role
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "48h" }
+        );
+
+        // Update the user's last login time
+        user.lastLogin = new Date();
+        await user.save();
+
+        // Return the authenticated user information
+        res.status(200).json({
+            message: "Google login successful",
+            token,
+            user: {
+                id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phone: user.phone,
+                university: user.university,
+                role: user.role,
+                image: user.image
+            }
+        });
+
+    } catch (error) {
+        console.log("Google login error:", error.response?.data || error.message);
+
+        res.status(500).json({
+            message: "Error logging in with Google"
         });
     }
 }

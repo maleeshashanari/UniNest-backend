@@ -1,7 +1,7 @@
 // Import express
 import express from "express";
 // Import user controller functions
-import { registerUser, loginUser, updateUserProfile, changeUserPassword, sendOTP, verifyOTP } from "../controllers/userController.js";
+import { registerUser, loginUser, updateUserProfile, changeUserPassword, sendOTP, verifyOTP, googleLogin } from "../controllers/userController.js";
 import { authorizeRoles } from "../middleware/authorizeRoleMiddleware.js";
 import authorizeUser from "../middleware/jwtMiddleware.js";
 
@@ -34,6 +34,9 @@ userRouter.post("/send-otp", sendOTP);
 
 // Verify OTP and reset password
 userRouter.post("/verify-otp", verifyOTP);
+
+// Google login
+userRouter.post("/google-login", googleLogin);
 
 // Export router
 export default userRouter;
