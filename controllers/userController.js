@@ -46,7 +46,7 @@ export async function registerUser(req, res) {
         university = university?.trim();
 
         // Check required fields
-        if (!firstName || !lastName || !email || !password || !confirmPassword || !phone) {
+        if (!firstName || !lastName || !email || !password || !confirmPassword) {
             return res.status(400).json({
                 message: "All required fields must be filled"
             });
@@ -74,13 +74,6 @@ export async function registerUser(req, res) {
         if (passwordErrors.length > 0) {
             return res.status(400).json({
                 message: `Password must contain ${passwordErrors.join(", ")}.`
-            });
-        }
-
-        // Validate phone number
-        if (!/^\d{10,15}$/.test(phone)) {
-            return res.status(400).json({
-                message: "Invalid phone number"
             });
         }
 
@@ -280,11 +273,10 @@ export async function updateUserProfile(req, res) {
         // Validate required profile fields
         if (
             typeof firstName !== "string" || !firstName.trim() ||
-            typeof lastName !== "string" || !lastName.trim() ||
-            typeof phone !== "string" || !phone.trim()
+            typeof lastName !== "string" || !lastName.trim()
         ) {
             return res.status(400).json({
-                message: "First name, last name and phone are required"
+                message: "First name and last name are required"
             });
         }
 
